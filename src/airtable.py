@@ -2,47 +2,47 @@
 import os
 import requests
 from typing import Optional, Literal, Dict, Any
+from fastmcp import Context
+
 
 def airtable_request(
+    token: str,
+    table_id: str,
     method: str = "GET",
     endpoint: str = "",
     params: Optional[Dict[str, Any]] = None,
     json_data: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
-    Generic function to make Airtable API requests with authentication.
+    Generic function to make authenticated API requests.
     
     Args:
+        token: Bearer token (passed from client request)
+        table_id: Target table identifier
         method: HTTP method (GET, POST, PATCH, DELETE)
-        endpoint: API endpoint path (appended to base table URL, e.g., "/recXXX")
+        endpoint: Additional endpoint path (e.g., "/recXXX")
         params: Optional query parameters
         json_data: Optional JSON body for POST/PATCH requests
     
     Returns:
         dict: Response data or error
     """
-    # Get configuration from environment variables
-    token = os.environ.get("AIRTABLE_TOKEN")
     base_id = os.environ.get("AIRTABLE_BASE_ID")
-    table_id = os.environ.get("AIRTABLE_TABLE_ID")
     
     if not token:
-        return {"error": "Airtable token not provided. Set AIRTABLE_TOKEN environment variable."}
+        return {"error": "No authentication token provided."}
     
     if not base_id or not table_id:
-        return {"error": "Missing AIRTABLE_BASE_ID or AIRTABLE_TABLE_ID environment variables."}
+        return {"error": "Server configuration is incomplete."}
     
-    # Construct API URL
     url = f"https://api.airtable.com/v0/{base_id}/{table_id}{endpoint}"
     
-    # Set up headers
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
     
     try:
-        # Make API request
         response = requests.request(
             method=method,
             url=url,
@@ -55,32 +55,39 @@ def airtable_request(
         return response.json()
     
     except requests.exceptions.RequestException as e:
-        return {"error": f"Airtable API request failed: {str(e)}"}
+        return {"error": f"Request failed: {str(e)}"}
 
 
 def get_messages(
+    ctx: Context,
     range: Optional[Literal["today", "this week", "this month", "all"]] = "all"
 ) -> dict:
     """
-    Get messages from Airtable, optionally filtered by time range and sorted descending by timestamp.
+    Retrieve messages, optionally filtered by a time range.
     
     Args:
-        range: Time range filter - can be "today", "this week", "this month", or "all" (default: "all")
+        ctx: FastMCP context (injected automatically)
+        range: Time range to filter by — "today", "this week", "this month", or "all" (default: "all")
     
     Returns:
-        dict: Messages sorted descending by timestamp
+        dict: Messages sorted by most recent first
     """
-    # Build query parameters with view
+    token = ctx.get_state("airtable_token")
+    if not token:
+        return {"error": "No authentication token provided in request header."}
+    
+    table_id = os.environ.get("AIRTABLE_MESSAGES_TABLE_ID")
+    if not table_id:
+        return {"error": "Messages table is not configured."}
+    
     params = {
         "view": range,
         "sort[0][field]": "timestamp",
         "sort[0][direction]": "desc"
     }
     
-    # Make API request using generic function
-    data = airtable_request(method="GET", params=params)
+    data = airtable_request(token=token, table_id=table_id, method="GET", params=params)
     
-    # Check for error
     if "error" in data:
         return {"error": data["error"], "range": range}
     
@@ -88,6 +95,47 @@ def get_messages(
         "range": range,
         "messages": data.get("records", []),
         "count": len(data.get("records", [])),
-        "sort_order": "descending",
-        "sort_by": "timestamp"
+    }
+
+
+def get_location(
+    ctx: Context,
+    limit: Optional[int] = None
+) -> dict:
+    """
+    Retrieve the most recent location records from the location log.
+    
+    Args:
+        ctx: FastMCP context (injected automatically)
+        limit: Number of recent location records to return (e.g. 1, 2, 10). Leave empty to get all.
+    
+    Returns:
+        dict: Location records sorted by most recent first
+    """
+    token = ctx.get_state("airtable_token")
+    if not token:
+        return {"error": "No authentication token provided in request header."}
+    
+    table_id = os.environ.get("AIRTABLE_LOCATION_LOGS_TABLE_ID")
+    if not table_id:
+        return {"error": "Location table is not configured."}
+    
+    params = {
+        "sort[0][field]": "timestamp",
+        "sort[0][direction]": "desc"
+    }
+    
+    if limit:
+        params["maxRecords"] = str(limit)
+    
+    data = airtable_request(token=token, table_id=table_id, method="GET", params=params)
+    
+    if "error" in data:
+        return {"error": data["error"]}
+    
+    records = data.get("records", [])
+    
+    return {
+        "locations": records,
+        "count": len(records),
     }

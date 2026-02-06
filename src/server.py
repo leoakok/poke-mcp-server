@@ -4,12 +4,12 @@ from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.server.dependencies import get_http_headers
-from airtable import get_messages
+from airtable import get_messages, get_location
 
 # Load environment variables from .env file
 load_dotenv()
 
-# Middleware to log all incoming HTTP headers
+# Middleware to log headers and extract bearer token for Airtable
 class HeaderLoggerMiddleware(Middleware):
     async def on_message(self, context: MiddlewareContext, call_next):
         headers = get_http_headers() or {}
@@ -17,6 +17,14 @@ class HeaderLoggerMiddleware(Middleware):
         for key, value in headers.items():
             print(f"  {key}: {value}")
         print("========================\n")
+
+        # Extract bearer token and store it in context state
+        auth_header = headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header.replace("Bearer ", "")
+            if context.fastmcp_context:
+                context.fastmcp_context.set_state("airtable_token", token)
+
         return await call_next(context)
 
 mcp = FastMCP(name="Poke MCP Server", instructions="An MCP server for Poke")
@@ -42,10 +50,14 @@ def get_server_info() -> dict:
     }
 
 
-# Register message tools
+# Register tools
 mcp.tool(
-    description="Get messages, optionally filtered by time range: today, this week, this month, or all. Returns messages sorted by most recent first."
+    description="Retrieve the user's messages. Use the 'range' parameter to filter by time period: 'today' for today's messages, 'this week' for the current week, 'this month' for the current month, or 'all' for the complete history. Messages are always returned with the most recent first."
 )(get_messages)
+
+mcp.tool(
+    description="Get the user's current or recent locations. Location is logged automatically every 30 minutes. Set limit=1 to get the current location, limit=10 for the last 10 check-ins, or leave limit empty to retrieve the full location history. Results are ordered from most recent to oldest."
+)(get_location)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
