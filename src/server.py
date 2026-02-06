@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 import os
+from dotenv import load_dotenv
 from fastmcp import FastMCP
+from airtable import get_messages
+
+# Load environment variables from .env file
+load_dotenv()
 
 mcp = FastMCP("Sample MCP Server")
 
@@ -17,6 +22,9 @@ def get_server_info() -> dict:
         "python_version": os.sys.version.split()[0]
     }
 
+# Register message tools
+mcp.tool(description="Get messages, optionally filtered by time range: today, this week, this month, or all. Returns messages sorted by most recent first.")(get_messages)
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     host = "0.0.0.0"
@@ -26,6 +34,5 @@ if __name__ == "__main__":
     mcp.run(
         transport="http",
         host=host,
-        port=port,
-        stateless_http=True
+        port=port
     )
