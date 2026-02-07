@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.server.dependencies import get_http_headers
-from airtable import get_messages, get_location
+from airtable import get_messages, get_location_log, update_location_log, create_place, get_places, get_place_types
 
 # Load environment variables from .env file
 load_dotenv()
@@ -56,8 +56,24 @@ mcp.tool(
 )(get_messages)
 
 mcp.tool(
-    description="Get the user's current or recent locations. Location is logged automatically every 30 minutes. Set limit=1 to get the current location, limit=10 for the last 10 check-ins, or leave limit empty to retrieve the full location history. Results are ordered from most recent to oldest."
-)(get_location)
+    description="Get entries from the user's location log. These are automatic check-ins recorded every 30 minutes. Set limit=1 for the latest check-in, limit=10 for the last 10, or leave empty for full history. Each log entry has a record ID that can be used with update_location_log to link it to a saved place."
+)(get_location_log)
+
+mcp.tool(
+    description="Link a location log entry to a saved place. Use this after identifying which place the user was at during a check-in. Requires the log entry's record ID (from get_location_log) and the place's record ID (from get_places). This helps track which saved places the user has visited and when."
+)(update_location_log)
+
+mcp.tool(
+    description="Save a new place the user has visited or wants to remember. Requires a name, address, and type (e.g. cafe, restaurant, coworking, bar, park, gym). Optionally include a rating (1-5) and personal notes. Before saving, consider using get_places to check if the place already exists."
+)(create_place)
+
+mcp.tool(
+    description="Search the user's saved places. Filter by one or multiple types at once (e.g. ['cafe', 'coworking'] to find cafes and coworking spaces together), or by minimum rating to find top-rated spots. Use this to suggest places the user has been to before, check if a place is already saved, or recommend a place based on what they need. Use get_place_types first to see the available type values for filtering."
+)(get_places)
+
+mcp.tool(
+    description="Get all available place types/categories. Call this before filtering places by type or before saving a new place, so you know the valid type values to use."
+)(get_place_types)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
