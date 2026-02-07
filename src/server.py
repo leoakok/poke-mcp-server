@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.server.dependencies import get_http_headers
-from airtable import get_messages, get_location_log, update_location_log, create_place, get_places, get_place_types
+from airtable import get_messages, get_location_log, update_location_log, create_place, update_place, get_places, get_place_types
 
 # Load environment variables from .env file
 load_dotenv()
@@ -66,6 +66,10 @@ mcp.tool(
 mcp.tool(
     description="Save a new place the user has visited or wants to remember. Requires a name, address, and type (e.g. cafe, restaurant, coworking, bar, park, gym). Optionally include a rating (1-5) and personal notes. Before saving, consider using get_places to check if the place already exists."
 )(create_place)
+
+mcp.tool(
+    description="Update an existing saved place. Use the place's record ID (from get_places) and provide any combination of type, rating, or notes to update. Only the provided fields will change, everything else stays the same."
+)(update_place)
 
 mcp.tool(
     description="Search the user's saved places. Filter by one or multiple types at once (e.g. ['cafe', 'coworking'] to find cafes and coworking spaces together), or by minimum rating to find top-rated spots. Use this to suggest places the user has been to before, check if a place is already saved, or recommend a place based on what they need. Use get_place_types first to see the available type values for filtering."

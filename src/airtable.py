@@ -202,6 +202,50 @@ def create_place(
     }
 
 
+def update_place(
+    ctx: Context,
+    place_id: Annotated[str, "The record ID of the place to update"],
+    type: Annotated[Optional[List[str]], "Updated categories for the place (e.g. ['cafe', 'coworking']). Use get_place_types to see available values."] = None,
+    rating: Annotated[Optional[int], "Updated rating from 1 to 5"] = None,
+    notes: Annotated[Optional[str], "Updated personal notes about the place"] = None
+) -> dict:
+    """Update an existing saved place. Only the provided fields will be updated, the rest will remain unchanged."""
+    token = ctx.get_state("airtable_token")
+    if not token:
+        return {"error": "No authentication token provided in request header."}
+    
+    table_id = os.environ.get("AIRTABLE_PLACES_TABLE_ID")
+    if not table_id:
+        return {"error": "Places table is not configured."}
+    
+    fields = {}
+    if type is not None:
+        fields["type"] = type
+    if rating is not None:
+        fields["rating"] = rating
+    if notes is not None:
+        fields["notes"] = notes
+    
+    if not fields:
+        return {"error": "No fields provided to update."}
+    
+    data = airtable_request(
+        token=token,
+        table_id=table_id,
+        method="PATCH",
+        endpoint=f"/{place_id}",
+        json_data={"fields": fields, "typecast": True}
+    )
+    
+    if "error" in data:
+        return {"error": data["error"]}
+    
+    return {
+        "place": data,
+        "message": "Place updated successfully."
+    }
+
+
 def get_places(
     ctx: Context,
     type: Annotated[
