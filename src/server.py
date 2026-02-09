@@ -7,7 +7,7 @@ from fastmcp.server.dependencies import get_http_headers
 from airtable import (
     get_messages, get_location_log, update_location_log,
     create_place, update_place, get_places, get_parameter_options,
-    get_contacts, create_contact, update_contact, delete_entry, get_birthdays
+    get_contacts, create_contacts, update_contact, delete_entry, get_birthdays
 )
 
 # Load environment variables from .env file
@@ -89,8 +89,8 @@ mcp.tool(
 )(get_contacts)
 
 mcp.tool(
-    description="Save a new contact. Only the name is required, all other fields (nickname, birthday, city, sex, relationship, phone, email, company, notes, met_date) are optional. Before saving, consider using get_contacts to check if the person already exists."
-)(create_contact)
+    description="Save one or more contacts at once. Pass a list of contact objects — each must have 'name', all other fields (nickname, birthday, city, sex, relationship, phone, email, company, notes, met_date) are optional. Handles any number of contacts automatically (batched in groups of 10). Before saving, consider using get_contacts to check if the person already exists."
+)(create_contacts)
 
 mcp.tool(
     description="Update an existing contact. Use the contact's record ID (from get_contacts) and provide any fields to update. Only the provided fields will change, everything else stays the same."

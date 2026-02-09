@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import time
 import requests
 from typing import Annotated, Optional, Literal, List, Dict, Any
 from fastmcp import Context
@@ -499,21 +500,14 @@ def get_contacts(
     }
 
 
-def create_contact(
+def create_contacts(
     ctx: Context,
-    name: Annotated[str, "Full name of the contact"],
-    nickname: Annotated[Optional[str], "Casual name or how you refer to them"] = None,
-    birthday: Annotated[Optional[str], "Date of birth in YYYY-MM-DD format"] = None,
-    city: Annotated[Optional[str], "City where they live. Call get_parameter_options(source='contact', parameter='city') to see available values."] = None,
-    sex: Annotated[Optional[Literal["man", "women", "other"]], "Gender of the contact"] = None,
-    relationship: Annotated[Optional[List[str]], "One or more relationship types (e.g. ['friend'], ['friend', 'colleague']). Call get_parameter_options(source='contact', parameter='relationship') to see available values."] = None,
-    phone: Annotated[Optional[str], "Phone number"] = None,
-    email: Annotated[Optional[str], "Email address"] = None,
-    company: Annotated[Optional[str], "Company or workplace"] = None,
-    notes: Annotated[Optional[str], "Free-form personal notes (e.g. 'met at Tokyo conference', 'loves hiking')"] = None,
-    met_date: Annotated[Optional[str], "When you first met them, in YYYY-MM-DD format"] = None
+    contacts: Annotated[
+        List[Dict[str, Any]],
+        "A list of contact objects to create. Each object must have 'name' (required). Optional fields: 'nickname', 'birthday' (YYYY-MM-DD), 'city', 'sex' (man/women/other), 'relationship' (list of strings), 'phone', 'email', 'company', 'notes', 'met_date' (YYYY-MM-DD). Call get_parameter_options(source='contact', parameter='city') and get_parameter_options(source='contact', parameter='relationship') to see available values before creating."
+    ]
 ) -> dict:
-    """Save a new contact."""
+    """Save one or more contacts. Accepts a list of contact objects and handles batch processing automatically."""
     token = ctx.get_state("airtable_token")
     if not token:
         return {"error": "No authentication token provided in request header."}
@@ -522,48 +516,82 @@ def create_contact(
     if not table_id:
         return {"error": "Contacts table is not configured."}
     
-    fields = {"name": name}
+    if not contacts:
+        return {"error": "No contacts provided."}
     
-    if nickname is not None:
-        fields["nickname"] = nickname
-    if birthday is not None:
-        fields["birthday"] = birthday
-    if city is not None:
-        fields["city"] = city.lower()
-    if sex is not None:
-        fields["sex"] = sex.lower()
-    if relationship is not None:
-        fields["relationship"] = [r.lower() for r in relationship]
-    if phone is not None:
-        fields["phone"] = phone
-    if email is not None:
-        fields["email"] = email
-    if company is not None:
-        fields["company"] = company
-    if notes is not None:
-        fields["notes"] = notes
-    if met_date is not None:
-        fields["met_date"] = met_date
+    # Build records with normalized select fields
+    records = []
+    for contact in contacts:
+        if "name" not in contact:
+            continue
+        
+        fields = {"name": contact["name"]}
+        
+        if contact.get("nickname") is not None:
+            fields["nickname"] = contact["nickname"]
+        if contact.get("birthday") is not None:
+            fields["birthday"] = contact["birthday"]
+        if contact.get("city") is not None:
+            fields["city"] = contact["city"].lower()
+        if contact.get("sex") is not None:
+            fields["sex"] = contact["sex"].lower()
+        if contact.get("relationship") is not None:
+            fields["relationship"] = [r.lower() for r in contact["relationship"]]
+        if contact.get("phone") is not None:
+            fields["phone"] = contact["phone"]
+        if contact.get("email") is not None:
+            fields["email"] = contact["email"]
+        if contact.get("company") is not None:
+            fields["company"] = contact["company"]
+        if contact.get("notes") is not None:
+            fields["notes"] = contact["notes"]
+        if contact.get("met_date") is not None:
+            fields["met_date"] = contact["met_date"]
+        
+        records.append({"fields": fields})
     
-    data = airtable_request(
-        token=token,
-        table_id=table_id,
-        method="POST",
-        json_data={"fields": fields, "typecast": True}
-    )
+    if not records:
+        return {"error": "No valid contacts found. Each contact must have at least a 'name' field."}
     
-    if "error" in data:
-        return {"error": data["error"]}
+    # Batch create in chunks of 10 (Airtable limit)
+    created = []
+    errors = []
+    chunk_size = 10
+    
+    for i in range(0, len(records), chunk_size):
+        chunk = records[i:i + chunk_size]
+        
+        data = airtable_request(
+            token=token,
+            table_id=table_id,
+            method="POST",
+            json_data={"records": chunk, "typecast": True}
+        )
+        
+        if "error" in data:
+            errors.append({"chunk": i // chunk_size + 1, "error": data["error"]})
+        else:
+            created.extend(data.get("records", []))
+        
+        # Rate limit: max 5 requests per second
+        if i + chunk_size < len(records):
+            time.sleep(0.2)
     
     available_relationships = fetch_field_options(token, table_id, "relationship")
     available_cities = fetch_field_options(token, table_id, "city")
     
-    return {
-        "contact": data,
-        "message": f"Contact '{name}' saved successfully.",
+    result = {
+        "created": created,
+        "created_count": len(created),
+        "total_requested": len(records),
         "available_relationships": available_relationships,
         "available_cities": available_cities,
     }
+    
+    if errors:
+        result["errors"] = errors
+    
+    return result
 
 
 def update_contact(
