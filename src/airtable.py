@@ -56,6 +56,35 @@ def airtable_request(
         return {"error": f"Request failed: {str(e)}"}
 
 
+def airtable_fetch_all(
+    token: str,
+    table_id: str,
+    params: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Fetch all records from an Airtable table, automatically handling pagination.
+    Airtable returns max 100 records per page with an 'offset' token for the next page.
+    """
+    all_records = []
+    current_params = dict(params) if params else {}
+    
+    while True:
+        data = airtable_request(token=token, table_id=table_id, method="GET", params=current_params)
+        
+        if "error" in data:
+            return data
+        
+        all_records.extend(data.get("records", []))
+        
+        offset = data.get("offset")
+        if not offset:
+            break
+        
+        current_params["offset"] = offset
+    
+    return {"records": all_records}
+
+
 def fetch_field_options(token: str, table_id: str, field_name: str) -> List[str]:
     """
     Fetch the available select/multi-select options for a field from the schema API.
@@ -106,15 +135,16 @@ def get_messages(
         "sort[0][direction]": "desc"
     }
     
-    data = airtable_request(token=token, table_id=table_id, method="GET", params=params)
+    data = airtable_fetch_all(token=token, table_id=table_id, params=params)
     
     if "error" in data:
         return {"error": data["error"], "range": range}
     
+    records = data.get("records", [])
     return {
         "range": range,
-        "messages": data.get("records", []),
-        "count": len(data.get("records", [])),
+        "messages": records,
+        "count": len(records),
     }
 
 
@@ -159,7 +189,7 @@ def get_location_log(
     if filters:
         params["filterByFormula"] = "AND(" + ", ".join(filters) + ")" if len(filters) > 1 else filters[0]
     
-    data = airtable_request(token=token, table_id=table_id, method="GET", params=params)
+    data = airtable_fetch_all(token=token, table_id=table_id, params=params)
     
     if "error" in data:
         return {"error": data["error"]}
@@ -367,7 +397,7 @@ def get_places(
     if filters:
         params["filterByFormula"] = "AND(" + ", ".join(filters) + ")" if len(filters) > 1 else filters[0]
     
-    data = airtable_request(token=token, table_id=table_id, method="GET", params=params)
+    data = airtable_fetch_all(token=token, table_id=table_id, params=params)
     
     if "error" in data:
         return {"error": data["error"]}
@@ -482,7 +512,7 @@ def get_contacts(
     if filters:
         params["filterByFormula"] = "AND(" + ", ".join(filters) + ")" if len(filters) > 1 else filters[0]
     
-    data = airtable_request(token=token, table_id=table_id, method="GET", params=params)
+    data = airtable_fetch_all(token=token, table_id=table_id, params=params)
     
     if "error" in data:
         return {"error": data["error"]}
@@ -707,7 +737,7 @@ def get_birthdays(
         "view": "birthday"
     }
     
-    data = airtable_request(token=token, table_id=table_id, method="GET", params=params)
+    data = airtable_fetch_all(token=token, table_id=table_id, params=params)
     
     if "error" in data:
         return {"error": data["error"]}
