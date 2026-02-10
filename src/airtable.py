@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import os
-import time
 import requests
 from typing import Annotated, Optional, Literal, List, Dict, Any
 from fastmcp import Context
@@ -391,7 +390,7 @@ def get_parameter_options(
     ],
     parameter: Annotated[
         str,
-        "Which parameter to get available options for — e.g. 'type' for place categories, 'relationship' for contact relationship types, 'city' for contact cities"
+        "Which parameter to get available options for — e.g. 'type' for place categories, 'relationship' for contact relationship types, 'location' for contact locations"
     ]
 ) -> dict:
     """Get available options for a given parameter. Use this to see valid values before creating or filtering places and contacts."""
@@ -434,9 +433,9 @@ def get_contacts(
         Optional[str],
         "Search by nickname (partial match). For example 'Jay' will match anyone with 'Jay' in their nickname."
     ] = None,
-    city: Annotated[
+    location: Annotated[
         Optional[str],
-        "Filter by city (partial match). For example 'Tokyo' will match any contact in Tokyo. Call get_parameter_options(source='contact', parameter='city') to see available values."
+        "Filter by location (partial match) — city name for contacts in Turkey, country name for contacts abroad. Call get_parameter_options(source='contact', parameter='location') to see available values."
     ] = None,
     sex: Annotated[
         Optional[Literal["man", "women", "other"]],
@@ -451,7 +450,7 @@ def get_contacts(
         "Search by company or workplace (partial match). For example 'Google' will match any contact at Google."
     ] = None
 ) -> dict:
-    """Search contacts, optionally filtered by name, nickname, city, sex, relationship type, or company."""
+    """Search contacts, optionally filtered by name, nickname, location, sex, relationship type, or company."""
     token = ctx.get_state("airtable_token")
     if not token:
         return {"error": "No authentication token provided in request header."}
@@ -467,8 +466,8 @@ def get_contacts(
         filters.append(f"FIND(LOWER('{name}'), LOWER({{name}}))")
     if nickname:
         filters.append(f"FIND(LOWER('{nickname}'), LOWER({{nickname}}))")
-    if city:
-        filters.append(f"FIND(LOWER('{city}'), LOWER({{city}}))")
+    if location:
+        filters.append(f"FIND(LOWER('{location}'), LOWER({{location}}))")
     if sex:
         filters.append(f"LOWER({{sex}}) = '{sex.lower()}'")
     if company:
@@ -490,24 +489,32 @@ def get_contacts(
     
     records = data.get("records", [])
     available_relationships = fetch_field_options(token, table_id, "relationship")
-    available_cities = fetch_field_options(token, table_id, "city")
+    available_locations = fetch_field_options(token, table_id, "location")
     
     return {
         "contacts": records,
         "count": len(records),
         "available_relationships": available_relationships,
-        "available_cities": available_cities,
+        "available_locations": available_locations,
     }
 
 
-def create_contacts(
+def create_contact(
     ctx: Context,
-    contacts: Annotated[
-        List[Dict[str, Any]],
-        "A list of contact objects to create. Each object must have 'name' (required). Optional fields: 'nickname', 'birthday' (YYYY-MM-DD), 'city', 'sex' (man/women/other), 'relationship' (list of strings), 'phone', 'email', 'company', 'notes', 'met_date' (YYYY-MM-DD). Call get_parameter_options(source='contact', parameter='city') and get_parameter_options(source='contact', parameter='relationship') to see available values before creating."
-    ]
+    name: Annotated[str, "Full name of the contact"],
+    nickname: Annotated[Optional[str], "Casual name or how you refer to them"] = None,
+    birthday: Annotated[Optional[str], "Date of birth in YYYY-MM-DD format"] = None,
+    location: Annotated[Optional[str], "Where they live — city name for contacts in Turkey (e.g. 'istanbul'), country name for contacts abroad (e.g. 'japan'). Call get_parameter_options(source='contact', parameter='location') to see available values."] = None,
+    sex: Annotated[Optional[Literal["man", "women", "other"]], "Gender of the contact"] = None,
+    relationship: Annotated[Optional[List[str]], "One or more relationship types (e.g. ['friend'], ['friend', 'colleague']). Call get_parameter_options(source='contact', parameter='relationship') to see available values."] = None,
+    phone: Annotated[Optional[str], "Phone number"] = None,
+    email: Annotated[Optional[str], "Email address"] = None,
+    company: Annotated[Optional[str], "Company or workplace"] = None,
+    linkedin: Annotated[Optional[str], "LinkedIn profile URL"] = None,
+    website: Annotated[Optional[str], "Personal or company website URL"] = None,
+    notes: Annotated[Optional[str], "Free-form personal notes (e.g. 'met at Tokyo conference', 'loves hiking')"] = None
 ) -> dict:
-    """Save one or more contacts. Accepts a list of contact objects and handles batch processing automatically."""
+    """Save a new contact."""
     token = ctx.get_state("airtable_token")
     if not token:
         return {"error": "No authentication token provided in request header."}
@@ -516,82 +523,50 @@ def create_contacts(
     if not table_id:
         return {"error": "Contacts table is not configured."}
     
-    if not contacts:
-        return {"error": "No contacts provided."}
+    fields = {"name": name}
     
-    # Build records with normalized select fields
-    records = []
-    for contact in contacts:
-        if "name" not in contact:
-            continue
-        
-        fields = {"name": contact["name"]}
-        
-        if contact.get("nickname") is not None:
-            fields["nickname"] = contact["nickname"]
-        if contact.get("birthday") is not None:
-            fields["birthday"] = contact["birthday"]
-        if contact.get("city") is not None:
-            fields["city"] = contact["city"].lower()
-        if contact.get("sex") is not None:
-            fields["sex"] = contact["sex"].lower()
-        if contact.get("relationship") is not None:
-            fields["relationship"] = [r.lower() for r in contact["relationship"]]
-        if contact.get("phone") is not None:
-            fields["phone"] = contact["phone"]
-        if contact.get("email") is not None:
-            fields["email"] = contact["email"]
-        if contact.get("company") is not None:
-            fields["company"] = contact["company"]
-        if contact.get("notes") is not None:
-            fields["notes"] = contact["notes"]
-        if contact.get("met_date") is not None:
-            fields["met_date"] = contact["met_date"]
-        
-        records.append({"fields": fields})
+    if nickname is not None:
+        fields["nickname"] = nickname
+    if birthday is not None:
+        fields["birthday"] = birthday
+    if location is not None:
+        fields["location"] = location.lower()
+    if sex is not None:
+        fields["sex"] = sex.lower()
+    if relationship is not None:
+        fields["relationship"] = [r.lower() for r in relationship]
+    if phone is not None:
+        fields["phone"] = phone
+    if email is not None:
+        fields["email"] = email
+    if company is not None:
+        fields["company"] = company
+    if linkedin is not None:
+        fields["linkedin"] = linkedin
+    if website is not None:
+        fields["website"] = website
+    if notes is not None:
+        fields["notes"] = notes
     
-    if not records:
-        return {"error": "No valid contacts found. Each contact must have at least a 'name' field."}
+    data = airtable_request(
+        token=token,
+        table_id=table_id,
+        method="POST",
+        json_data={"fields": fields, "typecast": True}
+    )
     
-    # Batch create in chunks of 10 (Airtable limit)
-    created = []
-    errors = []
-    chunk_size = 10
-    
-    for i in range(0, len(records), chunk_size):
-        chunk = records[i:i + chunk_size]
-        
-        data = airtable_request(
-            token=token,
-            table_id=table_id,
-            method="POST",
-            json_data={"records": chunk, "typecast": True}
-        )
-        
-        if "error" in data:
-            errors.append({"chunk": i // chunk_size + 1, "error": data["error"]})
-        else:
-            created.extend(data.get("records", []))
-        
-        # Rate limit: max 5 requests per second
-        if i + chunk_size < len(records):
-            time.sleep(0.2)
+    if "error" in data:
+        return {"error": data["error"]}
     
     available_relationships = fetch_field_options(token, table_id, "relationship")
-    available_cities = fetch_field_options(token, table_id, "city")
+    available_locations = fetch_field_options(token, table_id, "location")
     
-    result = {
-        "created": created,
-        "created_count": len(created),
-        "total_requested": len(records),
+    return {
+        "contact": data,
+        "message": f"Contact '{name}' saved successfully.",
         "available_relationships": available_relationships,
-        "available_cities": available_cities,
+        "available_locations": available_locations,
     }
-    
-    if errors:
-        result["errors"] = errors
-    
-    return result
 
 
 def update_contact(
@@ -600,14 +575,15 @@ def update_contact(
     name: Annotated[Optional[str], "Updated full name"] = None,
     nickname: Annotated[Optional[str], "Updated casual name"] = None,
     birthday: Annotated[Optional[str], "Updated date of birth in YYYY-MM-DD format"] = None,
-    city: Annotated[Optional[str], "Updated city. Call get_parameter_options(source='contact', parameter='city') to see available values."] = None,
+    location: Annotated[Optional[str], "Updated location — city name for contacts in Turkey, country name for contacts abroad. Call get_parameter_options(source='contact', parameter='location') to see available values."] = None,
     sex: Annotated[Optional[Literal["man", "women", "other"]], "Updated gender"] = None,
     relationship: Annotated[Optional[List[str]], "Updated relationship types (e.g. ['friend', 'colleague']). Call get_parameter_options(source='contact', parameter='relationship') to see available values."] = None,
     phone: Annotated[Optional[str], "Updated phone number"] = None,
     email: Annotated[Optional[str], "Updated email address"] = None,
     company: Annotated[Optional[str], "Updated company or workplace"] = None,
-    notes: Annotated[Optional[str], "Updated personal notes"] = None,
-    met_date: Annotated[Optional[str], "Updated met date in YYYY-MM-DD format"] = None
+    linkedin: Annotated[Optional[str], "Updated LinkedIn profile URL"] = None,
+    website: Annotated[Optional[str], "Updated personal or company website URL"] = None,
+    notes: Annotated[Optional[str], "Updated personal notes"] = None
 ) -> dict:
     """Update an existing contact. Only the provided fields will be updated, the rest will remain unchanged."""
     token = ctx.get_state("airtable_token")
@@ -625,8 +601,8 @@ def update_contact(
         fields["nickname"] = nickname
     if birthday is not None:
         fields["birthday"] = birthday
-    if city is not None:
-        fields["city"] = city.lower()
+    if location is not None:
+        fields["location"] = location.lower()
     if sex is not None:
         fields["sex"] = sex.lower()
     if relationship is not None:
@@ -637,10 +613,12 @@ def update_contact(
         fields["email"] = email
     if company is not None:
         fields["company"] = company
+    if linkedin is not None:
+        fields["linkedin"] = linkedin
+    if website is not None:
+        fields["website"] = website
     if notes is not None:
         fields["notes"] = notes
-    if met_date is not None:
-        fields["met_date"] = met_date
     
     if not fields:
         return {"error": "No fields provided to update."}
@@ -657,13 +635,13 @@ def update_contact(
         return {"error": data["error"]}
     
     available_relationships = fetch_field_options(token, table_id, "relationship")
-    available_cities = fetch_field_options(token, table_id, "city")
+    available_locations = fetch_field_options(token, table_id, "location")
     
     return {
         "contact": data,
         "message": "Contact updated successfully.",
         "available_relationships": available_relationships,
-        "available_cities": available_cities,
+        "available_locations": available_locations,
     }
 
 

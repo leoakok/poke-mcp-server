@@ -7,7 +7,7 @@ from fastmcp.server.dependencies import get_http_headers
 from airtable import (
     get_messages, get_location_log, update_location_log,
     create_place, update_place, get_places, get_parameter_options,
-    get_contacts, create_contacts, update_contact, delete_entry, get_birthdays
+    get_contacts, create_contact, update_contact, delete_entry, get_birthdays
 )
 
 # Load environment variables from .env file
@@ -80,17 +80,17 @@ mcp.tool(
 )(get_places)
 
 mcp.tool(
-    description="Get available options for a parameter. First pick the source ('place' or 'contact'), then the parameter name (e.g. 'type' for place categories, 'relationship' or 'city' for contacts). Call this before creating or filtering to use the correct existing values and avoid duplicates."
+    description="Get available options for a parameter. First pick the source ('place' or 'contact'), then the parameter name (e.g. 'type' for place categories, 'relationship' or 'location' for contacts). Call this before creating or filtering to use the correct existing values and avoid duplicates."
 )(get_parameter_options)
 
 # Contact tools
 mcp.tool(
-    description="Search the user's contacts. Filter by name, nickname, city, sex, relationship type (e.g. 'friend', 'colleague', 'family'), or company. Returns all contacts if no filters are provided. Use this to look up someone's details, find contacts in a specific city, list contacts by relationship, or find people at a company."
+    description="Search the user's contacts. Filter by name, nickname, location (city for Turkey, country for abroad), sex, relationship type (e.g. 'friend', 'colleague', 'family'), or company. Returns all contacts if no filters are provided. Use this to look up someone's details, find contacts in a specific location, list contacts by relationship, or find people at a company."
 )(get_contacts)
 
 mcp.tool(
-    description="Save one or more contacts at once. Pass a list of contact objects — each must have 'name', all other fields (nickname, birthday, city, sex, relationship, phone, email, company, notes, met_date) are optional. Handles any number of contacts automatically (batched in groups of 10). Before saving, consider using get_contacts to check if the person already exists."
-)(create_contacts)
+    description="Save a new contact. Only the name is required, all other fields (nickname, birthday, location, sex, relationship, phone, email, company, linkedin, website, notes) are optional. Before saving, consider using get_contacts to check if the person already exists."
+)(create_contact)
 
 mcp.tool(
     description="Update an existing contact. Use the contact's record ID (from get_contacts) and provide any fields to update. Only the provided fields will change, everything else stays the same."
